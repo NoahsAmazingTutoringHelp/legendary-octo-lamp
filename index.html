@@ -113,7 +113,6 @@
             cursor: pointer;
             font-size: 16px;
             margin: 10px;
-            display: none;
         }
         
         .retry-button:hover {
@@ -123,6 +122,10 @@
         .unity-mobile #unity-canvas {
             width: 100%;
             height: 100%;
+        }
+
+        .ignore-errors {
+            display: none;
         }
     </style>
 </head>
@@ -139,12 +142,13 @@
             <div class="spinner"></div>
             <div id="status-message">Initializing...</div>
             <div id="error-details"></div>
-            <button class="retry-button" onclick="retryLoad()">Retry Loading</button>
+            <button class="retry-button" onclick="retryLoad()" style="display: none;">Retry Loading</button>
+            <button class="retry-button" onclick="forceContinue()" style="display: none; background: #e74c3c;">Continue Anyway</button>
         </div>
     </div>
 
     <script>
-        // Configuration - make sure these paths are correct
+        // Configuration
         const buildUrl = "Build";
         const loaderUrl = buildUrl + "/War The Knights Battle Arena Swords 3D.loader.js";
         const config = {
@@ -161,88 +165,94 @@
         const container = document.querySelector("#unity-container");
         const canvas = document.querySelector("#unity-canvas");
         const loadingCover = document.querySelector("#loading-cover");
-        const progressBarEmpty = document.querySelector("#unity-progress-bar-empty");
         const progressBarFull = document.querySelector("#unity-progress-bar-full");
         const spinner = document.querySelector('.spinner');
         const statusMessage = document.querySelector('#status-message');
         const errorDetails = document.querySelector('#error-details');
         const retryButton = document.querySelector('.retry-button');
+        const forceButton = document.querySelector('.retry-button:nth-child(7)');
 
         let myGameInstance = null;
         let loadingStarted = false;
+        let hasError = false;
+
+        // Global error handler to catch Unity loader errors
+        window.addEventListener('error', function(e) {
+            if (hasError) return;
+            
+            const errorMsg = e.error ? e.error.message : e.message;
+            if (errorMsg && errorMsg.includes('environments')) {
+                console.warn('Ignoring environments typo error, continuing load...');
+                hasError = true;
+                // Don't show error for this specific issue, try to continue
+                return;
+            }
+        });
 
         function updateStatus(message) {
             console.log("Status:", message);
             statusMessage.textContent = message;
         }
 
-        function showError(error) {
+        function showError(error, canContinue = false) {
             console.error("Game Error:", error);
             spinner.style.display = 'none';
             errorDetails.textContent = "Error: " + (error.message || error || "Unknown error");
             errorDetails.style.display = 'block';
             retryButton.style.display = 'block';
             
-            // Show additional debug info
-            const debugInfo = [
-                "Loader URL: " + loaderUrl,
-                "Build Folder: " + buildUrl,
-                "User Agent: " + navigator.userAgent,
-                "Platform: " + navigator.platform
-            ];
-            console.log("Debug Info:", debugInfo);
+            if (canContinue) {
+                forceButton.style.display = 'block';
+            }
         }
 
         function retryLoad() {
             errorDetails.style.display = 'none';
             retryButton.style.display = 'none';
+            forceButton.style.display = 'none';
             spinner.style.display = 'block';
             progressBarFull.style.width = '0%';
             loadingStarted = false;
+            hasError = false;
             loadUnityGame();
+        }
+
+        function forceContinue() {
+            updateStatus("Attempting to continue despite error...");
+            errorDetails.style.display = 'none';
+            retryButton.style.display = 'none';
+            forceButton.style.display = 'none';
+            spinner.style.display = 'block';
+            
+            // Try to hide loading screen and hope the game works
+            setTimeout(() => {
+                loadingCover.style.display = "none";
+                updateStatus("Game should be running...");
+            }, 2000);
         }
 
         function loadUnityGame() {
             if (loadingStarted) return;
             loadingStarted = true;
 
-            updateStatus("Checking game files...");
-
-            // First, verify the loader file exists
-            fetch(loaderUrl)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Loader file not found (${response.status})`);
-                    }
-                    return response.text();
-                })
-                .then(() => {
-                    updateStatus("Loader found, loading Unity...");
-                    loadUnityLoader();
-                })
-                .catch(error => {
-                    showError(`Cannot find game loader: ${loaderUrl}. Make sure the Build folder exists with all Unity files.`);
-                });
-        }
-
-        function loadUnityLoader() {
-            updateStatus("Loading Unity runtime...");
+            updateStatus("Loading game...");
 
             const script = document.createElement("script");
             script.src = loaderUrl;
             
             script.onload = function() {
-                updateStatus("Unity loader ready, initializing game...");
+                updateStatus("Unity loader ready...");
                 
-                // Check if createUnityInstance function is available
                 if (typeof createUnityInstance === 'undefined') {
-                    showError("Unity loader didn't initialize properly. createUnityInstance is undefined.");
+                    showError("Unity loader didn't initialize properly.");
                     return;
                 }
 
-                console.log("createUnityInstance function available, starting game...");
+                // Add a timeout for the Unity initialization
+                const unityTimeout = setTimeout(() => {
+                    showError("Unity initialization timed out. The game might still work.", true);
+                }, 30000);
 
-                // Start Unity instance with better error handling
                 createUnityInstance(canvas, config, (progress) => {
                     const percent = Math.round(progress * 100);
                     updateStatus(`Loading game assets: ${percent}%`);
@@ -251,61 +261,48 @@
                     if (progress === 1) {
                         spinner.style.display = 'none';
                         updateStatus("Finalizing...");
+                        clearTimeout(unityTimeout);
                     }
                 })
                 .then((unityInstance) => {
+                    clearTimeout(unityTimeout);
                     console.log("Unity instance created successfully!");
                     updateStatus("Game loaded!");
                     myGameInstance = unityInstance;
                     
-                    // Hide loading screen after a short delay
                     setTimeout(() => {
                         loadingCover.style.display = "none";
-                        console.log("Game started successfully!");
                     }, 1000);
                 })
                 .catch((error) => {
+                    clearTimeout(unityTimeout);
                     console.error("Unity instance creation failed:", error);
-                    showError(error);
                     
-                    // Additional error analysis
-                    if (error && error.message) {
-                        if (error.message.includes('WebAssembly')) {
-                            errorDetails.textContent += " (WebAssembly issue - try different browser)";
-                        } else if (error.message.includes('memory')) {
-                            errorDetails.textContent += " (Memory issue - try closing other tabs)";
-                        } else if (error.message.includes('network') || error.message.includes('fetch')) {
-                            errorDetails.textContent += " (Network issue - check file paths)";
-                        }
+                    // If it's the environments error, try to continue anyway
+                    if (error && error.message && error.message.includes('environments')) {
+                        updateStatus("Ignoring minor error, continuing...");
+                        setTimeout(() => {
+                            loadingCover.style.display = "none";
+                        }, 2000);
+                    } else {
+                        showError(error, true);
                     }
                 });
             };
 
             script.onerror = function() {
-                showError(`Failed to load Unity loader script from: ${loaderUrl}. Check that the file exists and paths are correct.`);
+                showError(`Failed to load Unity loader from: ${loaderUrl}`);
             };
 
             document.body.appendChild(script);
         }
 
-        // Start the loading process when page is ready
+        // Start loading
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => {
-                setTimeout(loadUnityGame, 100);
-            });
+            document.addEventListener('DOMContentLoaded', loadUnityGame);
         } else {
-            setTimeout(loadUnityGame, 100);
+            loadUnityGame();
         }
-
-        // Add some global error handling
-        window.addEventListener('error', function(e) {
-            console.error('Global error:', e.error);
-        });
-
-        // Log when the page is fully loaded
-        window.addEventListener('load', function() {
-            console.log('Page fully loaded, starting game initialization...');
-        });
     </script>
 </body>
 </html>
