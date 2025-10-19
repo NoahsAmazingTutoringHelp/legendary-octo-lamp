@@ -5,8 +5,6 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
     <link rel="stylesheet" href="./style.css"/>
-    <!-- Yandex Games SDK -->
-    <script src="/sdk.js"></script>
     <style>
         canvas:focus {
             outline: none;
@@ -24,6 +22,55 @@
             user-select: none;
             -webkit-tap-highlight-color: rgba(0,0,0,0);
             height: 100%;
+            background: #000;
+        }
+        
+        #unity-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #unity-canvas {
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+        
+        #loading-cover {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        #unity-loading-bar {
+            text-align: center;
+            color: white;
+        }
+        
+        #unity-progress-bar-empty {
+            width: 300px;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            margin: 20px auto;
+            overflow: hidden;
+        }
+        
+        #unity-progress-bar-full {
+            width: 0%;
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s;
         }
         
         .spinner {
@@ -40,6 +87,11 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        .unity-mobile #unity-canvas {
+            width: 100%;
+            height: 100%;
+        }
     </style>
 </head>
 <body class="dark">
@@ -48,23 +100,23 @@
     </div>
     <div id="loading-cover">
         <div id="unity-loading-bar">
-            <div id="unity-logo"><img src="logo.png" alt="Logo"/></div>
+            <div id="unity-logo"><img src="logo.png" alt="Logo" onerror="this.style.display='none'"/></div>
             <div id="unity-progress-bar-empty">
                 <div id="unity-progress-bar-full"></div>
             </div>
             <div class="spinner"></div>
+            <div id="status-message">Loading game...</div>
         </div>
     </div>
 
     <script>
-        // Configuration - FIXED: Added missing comma
-        const hideFullScreenButton = "";
+        // Configuration
         const buildUrl = "Build";
         const loaderUrl = buildUrl + "/War The Knights Battle Arena Swords 3D.loader.js";
         const config = {
             dataUrl: buildUrl + "/War The Knights Battle Arena Swords 3D.data.unityweb",
             frameworkUrl: buildUrl + "/War The Knights Battle Arena Swords 3D.framework.js.unityweb",
-            codeUrl: buildUrl + "/War The Knights Battle Arena Swords 3D.wasm.unityweb", // COMMA WAS MISSING HERE
+            codeUrl: buildUrl + "/War The Knights Battle Arena Swords 3D.wasm.unityweb",
             streamingAssetsUrl: "StreamingAssets",
             companyName: "BANZAI",
             productName: "War The Knights Battle Arena Swords 3D",
@@ -78,114 +130,83 @@
         const progressBarEmpty = document.querySelector("#unity-progress-bar-empty");
         const progressBarFull = document.querySelector("#unity-progress-bar-full");
         const spinner = document.querySelector('.spinner');
+        const statusMessage = document.querySelector('#status-message');
 
         // Mobile detection
         if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
             container.className = "unity-mobile";
         }
 
-        // Show loading cover immediately
-        loadingCover.style.display = "block";
-        loadingCover.style.background = "url('background.jpg') center / cover";
-
         // Disable context menu
         document.addEventListener('contextmenu', event => event.preventDefault());
 
-        // Focus game function
-        function FocusGame() {
-            window.focus();
-            canvas.focus();
-        }
-
-        window.addEventListener('pointerdown', FocusGame);
-        window.addEventListener('touchstart', FocusGame);
-
-        // Game instance variables
-        let StartUnityInstance;
         let myGameInstance = null;
-        let ysdk = null;
-        let initGame = false;
+        let loadingStarted = false;
 
-        // Load Unity loader script
-        const script = document.createElement("script");
-        script.src = loaderUrl;
-        
-        // Error handling for script loading
-        script.onerror = function() {
-            console.error("Failed to load Unity loader from: " + loaderUrl);
-            spinner.innerHTML = "Failed to load game. Check console for errors.";
-        };
-        
-        script.onload = function() {
-            console.log("Unity loader loaded successfully");
-            StartUnityInstance = function() {
-                console.log("Starting Unity instance...");
-                createUnityInstance(canvas, config, (progress) => {
-                    console.log("Loading progress: " + (progress * 100) + "%");
-                    spinner.style.display = "none";
-                    progressBarEmpty.style.display = "block";
-                    progressBarFull.style.width = `${100 * progress}%`;
-                }).then((unityInstance) => {
-                    console.log("Unity instance created successfully");
-                    myGameInstance = unityInstance;
-                    loadingCover.style.display = "none";
-                    initGame = true;
-                }).catch((error) => {
-                    console.error("Failed to create Unity instance:", error);
-                    spinner.innerHTML = "Failed to load game: " + error.message;
-                });
-            };
-            
-            // Start the game immediately for localhost, otherwise wait for Yandex SDK
-            if (LocalHost()) {
-                console.log("Running on localhost, starting Unity immediately");
-                StartUnityInstance();
-            } else {
-                console.log("Not localhost, initializing Yandex SDK first");
-                InitYSDK();
+        function updateStatus(message) {
+            console.log(message);
+            if (statusMessage) {
+                statusMessage.textContent = message;
             }
-        };
-
-        // Check if running on localhost
-        function LocalHost() {
-            const host = window.location.hostname;
-            return host === "localhost" || host === "127.0.0.1" || host === "";
         }
 
-        // Initialize Yandex SDK
-        async function InitYSDK() {
-            try {
-                console.log('Initializing Yandex SDK...');
+        function loadUnityGame() {
+            if (loadingStarted) return;
+            loadingStarted = true;
+
+            updateStatus("Loading Unity game...");
+
+            // Create and load the Unity loader script
+            const script = document.createElement("script");
+            script.src = loaderUrl;
+            
+            script.onload = function() {
+                updateStatus("Unity loader loaded, starting game...");
                 
-                // Check if YaGames is available
-                if (typeof YaGames === 'undefined') {
-                    console.warn('Yandex Games SDK not found, starting Unity anyway');
-                    StartUnityInstance();
+                if (typeof createUnityInstance === 'undefined') {
+                    updateStatus("Error: Unity loader didn't initialize properly");
                     return;
                 }
-                
-                ysdk = await YaGames.init();
-                console.log('Yandex SDK initialized successfully');
-                
-                // Initialize other Yandex features here if needed
-                
-            } catch (error) {
-                console.error('Failed to initialize Yandex SDK:', error);
-            } finally {
-                // Always start Unity instance regardless of Yandex SDK status
-                console.log('Starting Unity instance after Yandex SDK attempt');
-                StartUnityInstance();
-            }
+
+                // Start Unity instance
+                createUnityInstance(canvas, config, (progress) => {
+                    const percent = Math.round(progress * 100);
+                    updateStatus(`Loading: ${percent}%`);
+                    progressBarFull.style.width = `${percent}%`;
+                    
+                    if (progress === 1) {
+                        spinner.style.display = 'none';
+                        updateStatus("Starting game...");
+                    }
+                }).then((unityInstance) => {
+                    updateStatus("Game loaded successfully!");
+                    myGameInstance = unityInstance;
+                    setTimeout(() => {
+                        loadingCover.style.display = "none";
+                    }, 500);
+                }).catch((error) => {
+                    console.error("Unity initialization failed:", error);
+                    updateStatus("Failed to load game: " + error.message);
+                    spinner.style.display = 'none';
+                });
+            };
+
+            script.onerror = function() {
+                updateStatus("Error: Failed to load Unity loader script");
+                console.error("Failed to load:", loaderUrl);
+                spinner.style.display = 'none';
+            };
+
+            document.body.appendChild(script);
         }
 
-        // Add the script to the document
-        document.body.appendChild(script);
-
-        // Add some debug info
-        console.log("Game initialization started");
-        console.log("Loader URL:", loaderUrl);
-        console.log("Config:", config);
-        console.log("Is localhost:", LocalHost());
+        // Start loading immediately
+        updateStatus("Initializing...");
+        
+        // Wait a bit for DOM to be fully ready
+        setTimeout(() => {
+            loadUnityGame();
+        }, 100);
     </script>
 </body>
 </html>
