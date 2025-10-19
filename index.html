@@ -1,308 +1,57 @@
 <!DOCTYPE html>
-<html lang="en-us">
+<html>
 <head>
-    <meta charset="utf-8"/>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+    <meta charset="utf-8">
+    <title>War The Knights Battle Arena</title>
     <style>
-        canvas:focus {
-            outline: none;
-        }
-
-        html, body {
-            padding: 0;
-            margin: 0;
-            overflow: hidden;
-            -webkit-touch-callout: none;
-            -webkit-user-select: none;
-            -khtml-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-            user-select: none;
-            -webkit-tap-highlight-color: rgba(0,0,0,0);
-            height: 100%;
-            background: #000;
-            font-family: Arial, sans-serif;
-        }
-        
-        #unity-container {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        #unity-canvas {
-            width: 100%;
-            height: 100%;
-            background: #000;
-        }
-        
-        #loading-cover {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            flex-direction: column;
-        }
-        
-        #unity-loading-bar {
-            text-align: center;
-            color: white;
-            max-width: 90%;
-        }
-        
-        #unity-progress-bar-empty {
-            width: 300px;
-            height: 20px;
-            background: #333;
-            border-radius: 10px;
-            margin: 20px auto;
-            overflow: hidden;
-        }
-        
-        #unity-progress-bar-full {
-            width: 0%;
-            height: 100%;
-            background: #4CAF50;
-            transition: width 0.3s;
-        }
-        
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 2s linear infinite;
-            margin: 20px auto;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        #status-message {
-            margin: 10px 0;
-            font-size: 16px;
-        }
-        
-        #error-details {
-            margin: 10px 0;
-            color: #ff6b6b;
-            font-size: 14px;
-            max-width: 500px;
-            text-align: center;
-            display: none;
-        }
-        
-        .retry-button {
-            background: #3498db;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin: 10px;
-        }
-        
-        .retry-button:hover {
-            background: #2980b9;
-        }
-        
-        .unity-mobile #unity-canvas {
-            width: 100%;
-            height: 100%;
-        }
-
-        .ignore-errors {
-            display: none;
+        body { margin: 0; padding: 0; background: black; }
+        #gameContainer { width: 100vw; height: 100vh; }
+        #loading { 
+            position: absolute; 
+            top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); 
+            color: white; 
+            text-align: center; 
         }
     </style>
 </head>
-<body class="dark">
-    <div id="unity-container" class="unity-desktop">
-        <canvas id="unity-canvas" tabindex="-1"></canvas>
+<body>
+    <div id="gameContainer">
+        <canvas id="unityCanvas"></canvas>
     </div>
-    <div id="loading-cover">
-        <div id="unity-loading-bar">
-            <div id="unity-logo"><img src="logo.png" alt="Logo" onerror="this.style.display='none'" style="max-width: 200px;"/></div>
-            <div id="unity-progress-bar-empty">
-                <div id="unity-progress-bar-full"></div>
-            </div>
-            <div class="spinner"></div>
-            <div id="status-message">Initializing...</div>
-            <div id="error-details"></div>
-            <button class="retry-button" onclick="retryLoad()" style="display: none;">Retry Loading</button>
-            <button class="retry-button" onclick="forceContinue()" style="display: none; background: #e74c3c;">Continue Anyway</button>
-        </div>
-    </div>
+    <div id="loading">Loading Game...</div>
 
     <script>
-        // Configuration
-        const buildUrl = "Build";
-        const loaderUrl = buildUrl + "/War The Knights Battle Arena Swords 3D.loader.js";
-        const config = {
+        // Simple loader - replace with your actual file names
+        var buildUrl = "Build";
+        var config = {
             dataUrl: buildUrl + "/War The Knights Battle Arena Swords 3D.data.unityweb",
             frameworkUrl: buildUrl + "/War The Knights Battle Arena Swords 3D.framework.js.unityweb",
             codeUrl: buildUrl + "/War The Knights Battle Arena Swords 3D.wasm.unityweb",
-            streamingAssetsUrl: "StreamingAssets",
-            companyName: "BANZAI",
-            productName: "War The Knights Battle Arena Swords 3D",
-            productVersion: "3.0"
         };
 
-        // DOM elements
-        const container = document.querySelector("#unity-container");
-        const canvas = document.querySelector("#unity-canvas");
-        const loadingCover = document.querySelector("#loading-cover");
-        const progressBarFull = document.querySelector("#unity-progress-bar-full");
-        const spinner = document.querySelector('.spinner');
-        const statusMessage = document.querySelector('#status-message');
-        const errorDetails = document.querySelector('#error-details');
-        const retryButton = document.querySelector('.retry-button');
-        const forceButton = document.querySelector('.retry-button:nth-child(7)');
+        var loading = document.getElementById("loading");
+        var canvas = document.getElementById("unityCanvas");
 
-        let myGameInstance = null;
-        let loadingStarted = false;
-        let hasError = false;
+        // Load the Unity loader
+        var script = document.createElement("script");
+        script.src = buildUrl + "/War The Knights Battle Arena Swords 3D.loader.js";
+        
+        script.onload = function() {
+            createUnityInstance(canvas, config, function(progress) {
+                loading.innerHTML = "Loading: " + Math.round(progress * 100) + "%";
+            }).then(function(instance) {
+                loading.style.display = "none";
+            }).catch(function(error) {
+                loading.innerHTML = "Error: " + error;
+            });
+        };
 
-        // Global error handler to catch Unity loader errors
-        window.addEventListener('error', function(e) {
-            if (hasError) return;
-            
-            const errorMsg = e.error ? e.error.message : e.message;
-            if (errorMsg && errorMsg.includes('environments')) {
-                console.warn('Ignoring environments typo error, continuing load...');
-                hasError = true;
-                // Don't show error for this specific issue, try to continue
-                return;
-            }
-        });
+        script.onerror = function() {
+            loading.innerHTML = "Failed to load game files";
+        };
 
-        function updateStatus(message) {
-            console.log("Status:", message);
-            statusMessage.textContent = message;
-        }
-
-        function showError(error, canContinue = false) {
-            console.error("Game Error:", error);
-            spinner.style.display = 'none';
-            errorDetails.textContent = "Error: " + (error.message || error || "Unknown error");
-            errorDetails.style.display = 'block';
-            retryButton.style.display = 'block';
-            
-            if (canContinue) {
-                forceButton.style.display = 'block';
-            }
-        }
-
-        function retryLoad() {
-            errorDetails.style.display = 'none';
-            retryButton.style.display = 'none';
-            forceButton.style.display = 'none';
-            spinner.style.display = 'block';
-            progressBarFull.style.width = '0%';
-            loadingStarted = false;
-            hasError = false;
-            loadUnityGame();
-        }
-
-        function forceContinue() {
-            updateStatus("Attempting to continue despite error...");
-            errorDetails.style.display = 'none';
-            retryButton.style.display = 'none';
-            forceButton.style.display = 'none';
-            spinner.style.display = 'block';
-            
-            // Try to hide loading screen and hope the game works
-            setTimeout(() => {
-                loadingCover.style.display = "none";
-                updateStatus("Game should be running...");
-            }, 2000);
-        }
-
-        function loadUnityGame() {
-            if (loadingStarted) return;
-            loadingStarted = true;
-
-            updateStatus("Loading game...");
-
-            const script = document.createElement("script");
-            script.src = loaderUrl;
-            
-            script.onload = function() {
-                updateStatus("Unity loader ready...");
-                
-                if (typeof createUnityInstance === 'undefined') {
-                    showError("Unity loader didn't initialize properly.");
-                    return;
-                }
-
-                // Add a timeout for the Unity initialization
-                const unityTimeout = setTimeout(() => {
-                    showError("Unity initialization timed out. The game might still work.", true);
-                }, 30000);
-
-                createUnityInstance(canvas, config, (progress) => {
-                    const percent = Math.round(progress * 100);
-                    updateStatus(`Loading game assets: ${percent}%`);
-                    progressBarFull.style.width = `${percent}%`;
-                    
-                    if (progress === 1) {
-                        spinner.style.display = 'none';
-                        updateStatus("Finalizing...");
-                        clearTimeout(unityTimeout);
-                    }
-                })
-                .then((unityInstance) => {
-                    clearTimeout(unityTimeout);
-                    console.log("Unity instance created successfully!");
-                    updateStatus("Game loaded!");
-                    myGameInstance = unityInstance;
-                    
-                    setTimeout(() => {
-                        loadingCover.style.display = "none";
-                    }, 1000);
-                })
-                .catch((error) => {
-                    clearTimeout(unityTimeout);
-                    console.error("Unity instance creation failed:", error);
-                    
-                    // If it's the environments error, try to continue anyway
-                    if (error && error.message && error.message.includes('environments')) {
-                        updateStatus("Ignoring minor error, continuing...");
-                        setTimeout(() => {
-                            loadingCover.style.display = "none";
-                        }, 2000);
-                    } else {
-                        showError(error, true);
-                    }
-                });
-            };
-
-            script.onerror = function() {
-                showError(`Failed to load Unity loader from: ${loaderUrl}`);
-            };
-
-            document.body.appendChild(script);
-        }
-
-        // Start loading
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', loadUnityGame);
-        } else {
-            loadUnityGame();
-        }
+        document.body.appendChild(script);
     </script>
 </body>
 </html>
