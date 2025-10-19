@@ -4,7 +4,6 @@
     <meta charset="utf-8"/>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-    <link rel="stylesheet" href="./style.css"/>
     <style>
         canvas:focus {
             outline: none;
@@ -23,6 +22,7 @@
             -webkit-tap-highlight-color: rgba(0,0,0,0);
             height: 100%;
             background: #000;
+            font-family: Arial, sans-serif;
         }
         
         #unity-container {
@@ -50,11 +50,13 @@
             justify-content: center;
             align-items: center;
             z-index: 1000;
+            flex-direction: column;
         }
         
         #unity-loading-bar {
             text-align: center;
             color: white;
+            max-width: 90%;
         }
         
         #unity-progress-bar-empty {
@@ -88,6 +90,36 @@
             100% { transform: rotate(360deg); }
         }
         
+        #status-message {
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        
+        #error-details {
+            margin: 10px 0;
+            color: #ff6b6b;
+            font-size: 14px;
+            max-width: 500px;
+            text-align: center;
+            display: none;
+        }
+        
+        .retry-button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+            display: none;
+        }
+        
+        .retry-button:hover {
+            background: #2980b9;
+        }
+        
         .unity-mobile #unity-canvas {
             width: 100%;
             height: 100%;
@@ -100,17 +132,19 @@
     </div>
     <div id="loading-cover">
         <div id="unity-loading-bar">
-            <div id="unity-logo"><img src="logo.png" alt="Logo" onerror="this.style.display='none'"/></div>
+            <div id="unity-logo"><img src="logo.png" alt="Logo" onerror="this.style.display='none'" style="max-width: 200px;"/></div>
             <div id="unity-progress-bar-empty">
                 <div id="unity-progress-bar-full"></div>
             </div>
             <div class="spinner"></div>
-            <div id="status-message">Loading game...</div>
+            <div id="status-message">Initializing...</div>
+            <div id="error-details"></div>
+            <button class="retry-button" onclick="retryLoad()">Retry Loading</button>
         </div>
     </div>
 
     <script>
-        // Configuration
+        // Configuration - make sure these paths are correct
         const buildUrl = "Build";
         const loaderUrl = buildUrl + "/War The Knights Battle Arena Swords 3D.loader.js";
         const config = {
@@ -131,82 +165,147 @@
         const progressBarFull = document.querySelector("#unity-progress-bar-full");
         const spinner = document.querySelector('.spinner');
         const statusMessage = document.querySelector('#status-message');
-
-        // Mobile detection
-        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-            container.className = "unity-mobile";
-        }
-
-        // Disable context menu
-        document.addEventListener('contextmenu', event => event.preventDefault());
+        const errorDetails = document.querySelector('#error-details');
+        const retryButton = document.querySelector('.retry-button');
 
         let myGameInstance = null;
         let loadingStarted = false;
 
         function updateStatus(message) {
-            console.log(message);
-            if (statusMessage) {
-                statusMessage.textContent = message;
-            }
+            console.log("Status:", message);
+            statusMessage.textContent = message;
+        }
+
+        function showError(error) {
+            console.error("Game Error:", error);
+            spinner.style.display = 'none';
+            errorDetails.textContent = "Error: " + (error.message || error || "Unknown error");
+            errorDetails.style.display = 'block';
+            retryButton.style.display = 'block';
+            
+            // Show additional debug info
+            const debugInfo = [
+                "Loader URL: " + loaderUrl,
+                "Build Folder: " + buildUrl,
+                "User Agent: " + navigator.userAgent,
+                "Platform: " + navigator.platform
+            ];
+            console.log("Debug Info:", debugInfo);
+        }
+
+        function retryLoad() {
+            errorDetails.style.display = 'none';
+            retryButton.style.display = 'none';
+            spinner.style.display = 'block';
+            progressBarFull.style.width = '0%';
+            loadingStarted = false;
+            loadUnityGame();
         }
 
         function loadUnityGame() {
             if (loadingStarted) return;
             loadingStarted = true;
 
-            updateStatus("Loading Unity game...");
+            updateStatus("Checking game files...");
 
-            // Create and load the Unity loader script
+            // First, verify the loader file exists
+            fetch(loaderUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Loader file not found (${response.status})`);
+                    }
+                    return response.text();
+                })
+                .then(() => {
+                    updateStatus("Loader found, loading Unity...");
+                    loadUnityLoader();
+                })
+                .catch(error => {
+                    showError(`Cannot find game loader: ${loaderUrl}. Make sure the Build folder exists with all Unity files.`);
+                });
+        }
+
+        function loadUnityLoader() {
+            updateStatus("Loading Unity runtime...");
+
             const script = document.createElement("script");
             script.src = loaderUrl;
             
             script.onload = function() {
-                updateStatus("Unity loader loaded, starting game...");
+                updateStatus("Unity loader ready, initializing game...");
                 
+                // Check if createUnityInstance function is available
                 if (typeof createUnityInstance === 'undefined') {
-                    updateStatus("Error: Unity loader didn't initialize properly");
+                    showError("Unity loader didn't initialize properly. createUnityInstance is undefined.");
                     return;
                 }
 
-                // Start Unity instance
+                console.log("createUnityInstance function available, starting game...");
+
+                // Start Unity instance with better error handling
                 createUnityInstance(canvas, config, (progress) => {
                     const percent = Math.round(progress * 100);
-                    updateStatus(`Loading: ${percent}%`);
+                    updateStatus(`Loading game assets: ${percent}%`);
                     progressBarFull.style.width = `${percent}%`;
                     
                     if (progress === 1) {
                         spinner.style.display = 'none';
-                        updateStatus("Starting game...");
+                        updateStatus("Finalizing...");
                     }
-                }).then((unityInstance) => {
-                    updateStatus("Game loaded successfully!");
+                })
+                .then((unityInstance) => {
+                    console.log("Unity instance created successfully!");
+                    updateStatus("Game loaded!");
                     myGameInstance = unityInstance;
+                    
+                    // Hide loading screen after a short delay
                     setTimeout(() => {
                         loadingCover.style.display = "none";
-                    }, 500);
-                }).catch((error) => {
-                    console.error("Unity initialization failed:", error);
-                    updateStatus("Failed to load game: " + error.message);
-                    spinner.style.display = 'none';
+                        console.log("Game started successfully!");
+                    }, 1000);
+                })
+                .catch((error) => {
+                    console.error("Unity instance creation failed:", error);
+                    showError(error);
+                    
+                    // Additional error analysis
+                    if (error && error.message) {
+                        if (error.message.includes('WebAssembly')) {
+                            errorDetails.textContent += " (WebAssembly issue - try different browser)";
+                        } else if (error.message.includes('memory')) {
+                            errorDetails.textContent += " (Memory issue - try closing other tabs)";
+                        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                            errorDetails.textContent += " (Network issue - check file paths)";
+                        }
+                    }
                 });
             };
 
             script.onerror = function() {
-                updateStatus("Error: Failed to load Unity loader script");
-                console.error("Failed to load:", loaderUrl);
-                spinner.style.display = 'none';
+                showError(`Failed to load Unity loader script from: ${loaderUrl}. Check that the file exists and paths are correct.`);
             };
 
             document.body.appendChild(script);
         }
 
-        // Start loading immediately
-        updateStatus("Initializing...");
-        
-        // Wait a bit for DOM to be fully ready
-        setTimeout(() => {
-            loadUnityGame();
-        }, 100);
+        // Start the loading process when page is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                setTimeout(loadUnityGame, 100);
+            });
+        } else {
+            setTimeout(loadUnityGame, 100);
+        }
+
+        // Add some global error handling
+        window.addEventListener('error', function(e) {
+            console.error('Global error:', e.error);
+        });
+
+        // Log when the page is fully loaded
+        window.addEventListener('load', function() {
+            console.log('Page fully loaded, starting game initialization...');
+        });
     </script>
 </body>
 </html>
